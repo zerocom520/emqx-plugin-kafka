@@ -23,10 +23,9 @@
         ]).
 
 start(_StartType, _StartArgs) ->
-    {ok, Sup} = emqx_plugin_kafka_sup:start_link(),
     emqx_plugin_kafka:load(application:get_all_env()),
-    {ok, Sup}.
+	emqx_plugin_kafka_sup:start_link().
 
 stop(_State) ->
-    emqx_plugin_template:unload().
+    emqx_plugin_kafka:unload().
 

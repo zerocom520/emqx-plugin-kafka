@@ -1,4 +1,3 @@
-%%-*- mode: erlang -*-
 CONFIG1 = case os:getenv("TRAVIS") of
               "true" ->
                   JobId = os:getenv("TRAVIS_JOB_ID"),
@@ -32,8 +31,11 @@ UrlPrefix = "https://github.com/emqx/",
 
 EMQX_DEP = {emqx, {git, UrlPrefix ++ "emqx", {branch, BRANCH}}},
 
-NewDeps = [EMQX_DEP | DEPS],
+EMQX_MGMT_DEP = {emqx_management, {git, UrlPrefix ++ "emqx-management", {branch, BRANCH}}},
+
+NewDeps = [EMQX_DEP, EMQX_MGMT_DEP | DEPS],
 
 CONFIG2 = lists:keystore(deps, 1, CONFIG1, {deps, NewDeps}),
 
 CONFIG2.
+
