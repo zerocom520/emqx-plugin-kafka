@@ -1,42 +1,81 @@
 %%-*- mode: erlang -*-
 %% emq_auth_pgsl config mapping
 
-{mapping, "kafka.host", "emqx_plugin_kafka.broker", [
+{mapping, "event.kafka.host", "emqx_plugin_kafka.broker", [
   {default, "localhost"},
   {datatype, string}
 ]}.
 
-{mapping, "kafka.port", "emqx_plugin_kafka.broker", [
-  {default, "9092"},
-  {datatype, string}
-]}.
-
-{mapping, "kafka.partitionstrategy", "emqx_plugin_kafka.broker", [
-  {default, "strict_round_robin"},
-  {datatype, string}
-]}.
-
-{mapping, "kafka.partitionworkers", "emqx_plugin_kafka.broker", [
-  {default, 2},
+{mapping, "event.kafka.port", "emqx_plugin_kafka.broker", [
+  {default, 9092},
   {datatype, integer}
 ]}.
 
-{mapping, "kafka.payloadtopic", "emqx_plugin_kafka.broker", [
-  {default, "Payload"},
+{mapping, "event.kafka.partition_total", "emqx_plugin_kafka.broker", [
+  {default, 1},
+  {datatype, integer}
+]}.
+
+{mapping, "event.kafka.topic", "emqx_plugin_kafka.broker", [
+  {default, "roobo_device_event"},
   {datatype, string}
 ]}.
 
-{mapping, "kafka.eventtopic", "emqx_plugin_kafka.broker", [
-  {default, "Event"},
+{mapping, "custom.kafka.host", "emqx_plugin_kafka.broker", [
+  {default, "localhost"},
+  {datatype, string}
+]}.
+
+{mapping, "custom.kafka.port", "emqx_plugin_kafka.broker", [
+  {default, 9092},
+  {datatype, integer}
+]}.
+
+{mapping, "custom.kafka.partition_total", "emqx_plugin_kafka.broker", [
+  {default, 1},
+  {datatype, integer}
+]}.
+
+{mapping, "custom.kafka.topic", "emqx_plugin_kafka.broker", [
+  {default, "roobo_device_event"},
+  {datatype, string}
+]}.
+
+{mapping, "online.kafka.host", "emqx_plugin_kafka.broker", [
+  {default, "localhost"},
+  {datatype, string}
+]}.
+
+{mapping, "online.kafka.port", "emqx_plugin_kafka.broker", [
+  {default, 9092},
+  {datatype, integer}
+]}.
+
+{mapping, "online.kafka.partition_total", "emqx_plugin_kafka.broker", [
+  {default, 1},
+  {datatype, integer}
+]}.
+
+{mapping, "online.kafka.topic", "emqx_plugin_kafka.broker", [
+  {default, "roobo_device_online"},
   {datatype, string}
 ]}.
 
 {translation, "emqx_plugin_kafka.broker", fun(Conf) ->
-  KafkaHost = cuttlefish:conf_get("kafka.host", Conf),
-  KafkaPort = cuttlefish:conf_get("kafka.port", Conf),
-  KafkaPartitionStrategy = cuttlefish:conf_get("kafka.partitionstrategy", Conf),
-  KafkaPartitionWorkers = cuttlefish:conf_get("kafka.partitionworkers", Conf),
-  KafkaPayloadTopic = cuttlefish:conf_get("kafka.payloadtopic", Conf),
-  KafkaEventTopic = cuttlefish:conf_get("kafka.eventtopic", Conf),
-  [{host, KafkaHost}, {port, KafkaPort}, {partitionstrategy, KafkaPartitionStrategy}, {partitionworkers, KafkaPartitionWorkers}, {payloadtopic, KafkaPayloadTopic}, {eventtopic, KafkaEventTopic}]
+  [
+  	{event_host, cuttlefish:conf_get("event.kafka.host", Conf)},
+  	{event_port, cuttlefish:conf_get("event.kafka.port", Conf)},
+  	{event_partition_total, cuttlefish:conf_get("event.kafka.partition_total", Conf)},
+  	{event_topic, cuttlefish:conf_get("event.kafka.topic", Conf)},
+  	
+  	{custom_host, cuttlefish:conf_get("custom.kafka.host", Conf)},
+  	{custom_port, cuttlefish:conf_get("custom.kafka.port", Conf)},
+  	{custom_partition_total, cuttlefish:conf_get("custom.kafka.partition_total", Conf)},
+  	{custom_topic, cuttlefish:conf_get("custom.kafka.topic", Conf)},
+  	
+  	{online_host, cuttlefish:conf_get("online.kafka.host", Conf)},
+  	{online_port, cuttlefish:conf_get("online.kafka.port", Conf)},
+  	{online_partition_total, cuttlefish:conf_get("online.kafka.partition_total", Conf)},
+  	{online_topic, cuttlefish:conf_get("online.kafka.topic", Conf)}
+  ]
   end}.
