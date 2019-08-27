@@ -113,7 +113,7 @@ ekaf_init(_Env) ->
 %%     {stop, allow}.
 
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
-%% 	?LOG(error,"on_client_connected Client:~p node:~s",[Client,node()]),
+	?LOG(debug, "on_client_connected Client:~p node:~s",[Client,node()]),
 	produce_connect_event_kafka_log(Clientid, Username, Peername),
 	ok.
 
