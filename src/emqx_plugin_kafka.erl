@@ -76,7 +76,7 @@ ekaf_init(_Env) ->
 	OnlinePartitionTotal = proplists:get_value(online_partition_total, BrokerValues),
 	OnlineTopic = proplists:get_value(online_topic, BrokerValues),
 	
-	ets:new(kafka_config, [named_table, protected, set, {keypos, 1}]),
+	ets:new(kafka_config, [named_table, protected, set, {keypos, 1}, {read_concurrency,true}]),
 	
 	ets:insert(kafka_config, {event_host, EventHost}),
 	ets:insert(kafka_config, {event_port, EventPort}),
@@ -112,10 +112,13 @@ ekaf_init(_Env) ->
 %%              [ClientId, PubSub, Topic, DefaultACLResult]),
 %%     {stop, allow}.
 
-on_client_connected(Client, ConnAck, ConnAttrs, _Env) ->
+on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
+%% 	?LOG(error,"on_client_connected Client:~p node:~s",[Client,node()]),
+	produce_connect_event_kafka_log(Clientid, Username, Peername),
 	ok.
 
 on_client_disconnected(Client, ReasonCode, _Env) ->
+%% 	?LOG(error,"on_client_disconnected Client:~p ResonCode:~p",[Client, ReasonCode]),
 	ok.
 
 %% on_client_subscribe(#{client_id := ClientId}, _Properties, RawTopicFilters, _Env) ->
@@ -149,7 +152,8 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
 		<<"disconnected">> ->
 			produce_event_kafka_log(disconnected, Message);
 		<<"connected">> ->
- 			produce_event_kafka_log(connected, Message);
+%%  			produce_event_kafka_log(connected, Message);
+			ok;
 		Other ->
 			ok
 	end,
@@ -244,7 +248,7 @@ produce_message_kafka_payload(Message) ->
 					case get_kafka_config(Event, Message#message.from) of
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
-							?LOG(debug,"msg payload: ~s topic:~s partition:~s r:~s Client:~s", [KafkaMessage, KafkaTopic]),
+							?LOG(error,"msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]),
 							{ok, Pid} = brod:produce(Client, KafkaTopic, Partition, <<>>, KafkaMessage);
 						{error, Msg} -> 
 							?LOG(error,"get_kafka_config error: ~s",[Msg])
@@ -290,6 +294,42 @@ get_app_id(Username)->
 			list_to_binary(lists:nth(2,string:tokens(UsernameStr,"@")))
 	end.
 
+get_mqtt_topic(Clientid)->
+	NodeStr = string:concat("$SYS/brokers/", atom_to_list(node())),
+%% 	?LOG(error, "get_mqtt_topic result1:~s", [NodeStr]),
+	Result =  string:concat(string:concat(string:concat(NodeStr, "/clients/"), binary_to_list(Clientid)), "/connected"),
+%% 	?LOG(error, "get_mqtt_topic result:~s",[Result]),
+	list_to_binary(Result).
+
+get_ip_str({{I1, I2, I3, I4},_})->
+	IP = list_to_binary(integer_to_list(I1)++"."++integer_to_list(I2)++"."++integer_to_list(I3)++"."++integer_to_list(I4)),
+%% 	?LOG(error,"ip:~s", [IP]),
+	IP.
+%% 	list_to_binary(integer_to_list(I1)++"."++integer_to_list(I2)++"."++integer_to_list(I3)++"."++integer_to_list(I4)).
+
+produce_connect_event_kafka_log(Clientid, Username, Peername) ->
+	Now = timestamp(),
+	MqttTopic = get_mqtt_topic(Clientid),
+	KafkaPayload = [
+					{clientId , Clientid},
+					{appId , get_app_id(Username)},
+					{recvedAt , Now},
+					{msgId , gen_msg_id(connected)},
+					{mqttTopic , MqttTopic},
+					{action , <<"device.status.online">>},
+					{ipaddress , get_ip_str(Peername)},
+					{timestamp , Now},
+					{isOnline , true},
+					{username , Username}
+				],
+	[{_,Topic}] = ets:lookup(kafka_config, online_topic),
+	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
+	Partition = erlang:phash2(Clientid) rem PartitionTotal,
+	KafkaMessage = jsx:encode(KafkaPayload),
+	?LOG(error,"connected payload: ~s topic:~s",[KafkaMessage,Topic]),
+	{ok, Pid} = brod:produce(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
+    ok.
+
 produce_event_kafka_log(connected, Message) ->
 	PayloadResult = jsx:decode(Message#message.payload),
 	Username = proplists:get_value(<<"username">>, PayloadResult),
@@ -310,7 +350,7 @@ produce_event_kafka_log(connected, Message) ->
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	?LOG(debug,"connected payload: ~s topic:~s",[KafkaMessage,Topic]),
+	?LOG(error,"connected payload: ~s topic:~s",[KafkaMessage,Topic]),
 	{ok, Pid} = brod:produce(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
     ok;
 
@@ -334,7 +374,7 @@ produce_event_kafka_log(disconnected, Message) ->
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	?LOG(debug,"disconnected payload: ~s topic:~s",[KafkaMessage,Topic]),
+	?LOG(error,"disconnected payload: ~s topic:~s",[KafkaMessage,Topic]),
 	{ok, Pid} = brod:produce(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
     ok.
 
