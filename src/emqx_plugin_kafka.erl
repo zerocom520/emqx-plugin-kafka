@@ -112,6 +112,10 @@ ekaf_init(_Env) ->
 %%              [ClientId, PubSub, Topic, DefaultACLResult]),
 %%     {stop, allow}.
 
+on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
+	?LOG(error, "on_client_connected Client:~p node:~s no auth result!",[Client,node()]),
+	ok;
+
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
 	?LOG(error, "on_client_connected Client:~p node:~s",[Client,node()]),
 	case AuthResult of 
