@@ -112,13 +112,18 @@ ekaf_init(_Env) ->
 %%              [ClientId, PubSub, Topic, DefaultACLResult]),
 %%     {stop, allow}.
 
-on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
-	?LOG(debug, "on_client_connected Client:~p node:~s",[Client,node()]),
-	produce_connect_event_kafka_log(Clientid, Username, Peername),
+on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
+	?LOG(error, "on_client_connected Client:~p node:~s",[Client,node()]),
+	case AuthResult of 
+		success -> 
+			produce_connect_event_kafka_log(Clientid, Username, Peername);
+		Other ->
+			?LOG(error,"on_client_connected auth error:~p",[AuthResult])
+	end,
 	ok.
 
 on_client_disconnected(Client, ReasonCode, _Env) ->
-%% 	?LOG(error,"on_client_disconnected Client:~p ResonCode:~p",[Client, ReasonCode]),
+	?LOG(error,"on_client_disconnected Client:~p ResonCode:~p",[Client, ReasonCode]),
 	ok.
 
 %% on_client_subscribe(#{client_id := ClientId}, _Properties, RawTopicFilters, _Env) ->
