@@ -116,7 +116,7 @@ on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername
 	?LOG(error, "on_client_connected Client:~p node:~s",[Client,node()]),
 	case AuthResult of 
 		success -> 
-			produce_connect_event_kafka_log(Clientid, Username, Peername);
+			produce_online_kafka_log(Clientid, Username, Peername, connected);
 		Other ->
 			?LOG(error,"on_client_connected auth error:~p",[AuthResult])
 	end,
@@ -126,8 +126,9 @@ on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername
 	?LOG(error, "on_client_connected Client:~p node:~s no auth result!",[Client,node()]),
 	ok.
 
-on_client_disconnected(Client, ReasonCode, _Env) ->
+on_client_disconnected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
 	?LOG(error,"on_client_disconnected Client:~p ResonCode:~p",[Client, ReasonCode]),
+	produce_online_kafka_log(Clientid, Username, Peername, disconnected),
 	ok.
 
 %% on_client_subscribe(#{client_id := ClientId}, _Properties, RawTopicFilters, _Env) ->
@@ -155,17 +156,17 @@ on_client_disconnected(Client, ReasonCode, _Env) ->
 
 %% Transform message and return
 on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
-	S = binary:split(Message#message.topic, <<$/>>, [global, trim]),
+%% 	S = binary:split(Message#message.topic, <<$/>>, [global, trim]),
 %% 	?LOG(error,"sys Publish ~p split ~p last ~s ~n", [Message,S,lists:last(S)]),
-	case lists:last(S) of 
-		<<"disconnected">> ->
-			produce_event_kafka_log(disconnected, Message);
-		<<"connected">> ->
-%%  			produce_event_kafka_log(connected, Message);
-			ok;
-		Other ->
-			ok
-	end,
+%% 	case lists:last(S) of 
+%% 		<<"disconnected">> ->
+%% 			produce_event_kafka_log(disconnected, Message);
+%% 		<<"connected">> ->
+%% %%  			produce_event_kafka_log(connected, Message);
+%% 			ok;
+%% 		Other ->
+%% 			ok
+%% 	end,
     {ok, Message};
 
 on_message_publish(Message, _Env) ->
@@ -188,18 +189,28 @@ on_message_publish(Message, _Env) ->
 %% on_message_dropped(#{client_id := ClientId}, Message, _Env) ->
 %%     io:format("Message dropped by client ~s: ~s~n", [ClientId, emqx_message:format(Message)]).
 
+get_temp_topic(S)->
+	case lists:last(S) of
+		<<"event">> ->
+			<<"">>;
+		<<"custom">> ->
+			<<"">>;
+		Other ->
+			Other
+	end.
+
 process_message_topic(Topic)->
 	S = binary:split(Topic, <<$/>>, [global, trim]),
 	Size = array:size(array:from_list(S)),
 	if 
-		Size>=4->
-			case lists:last(S) of
+		Size>=5 ->
+			case lists:nth(5, S) of
 				<<"event">> ->
-					{ok, event};
+					{ok, event, get_temp_topic(S)};
 				<<"custom">> ->
-					{ok, custom};
-				_ ->
-					?LOG(debug,"unknow topic:~s",[Topic]),
+					{ok, custom, get_temp_topic(S)};
+				Other ->
+					?LOG(error,"unknow topic:~s event:~p",[Topic, Other]),
 					{error,"unknow topic:" ++Topic}
 			end;
 		true->
@@ -208,11 +219,22 @@ process_message_topic(Topic)->
 	end.
 	
 
-process_message_payload(Payload)->
+get_proplist_value(Key, Proplist, DefaultValue)->
+	case proplists:get_value(Key, Proplist) of
+		undefined ->
+			DefaultValue;
+		Other ->
+			Other
+	end.
+
+process_message_payload(Payload, TempTopic)->
 	case jsx:is_json(Payload) of
 		true ->
 			BodyResult = jsx:decode(Payload),
-			{ok, proplists:get_value(<<"topic">>,BodyResult),proplists:get_value(<<"action">>,BodyResult)};
+			Topic = get_proplist_value(<<"topic">>, BodyResult, <<"">>),
+			Action = get_proplist_value(<<"action">>, BodyResult, TempTopic),
+			DataResult = proplists:delete(<<"action">>, proplists:delete(<<"topic">>, proplists:delete(<<"timestamp">>, BodyResult))),
+			{ok, Topic, Action, DataResult};
 		false ->
 			{error,"Payload is not a json:"++Payload}
 	end.
@@ -238,21 +260,23 @@ get_kafka_config(Event, Clientid) ->
 produce_message_kafka_payload(Message) ->
 	Topic = Message#message.topic, 
 	case process_message_topic(Topic) of 
-		{ok, Event} ->
+		{ok, Event, TempTopic} ->
 			#{username:=Username} = Message#message.headers,
-			case process_message_payload(Message#message.payload) of
-				{ok, PaloadTopic, Action} ->
+			case process_message_payload(Message#message.payload, TempTopic) of
+				{ok, PaloadTopic, Action, Data} ->
 					{M, S, _} = Message#message.timestamp,
 					KafkaPayload = [
 							{clientId , Message#message.from},
 							{appId , get_app_id(Username)},
 							{recvedAt , timestamp()},
-							{from,<<"mqtt">>},
+							{from , <<"mqtt">>},
+							{type , <<"string">>},
 							{msgId , gen_msg_id(Event)},
 							{mqttTopic , Topic},
 							{topic , PaloadTopic},
 							{action , Action},
-							{timestamp , M * 1000000 + S}
+							{timestamp , M * 1000000 + S},
+							{data , Data}
 						],
 					case get_kafka_config(Event, Message#message.from) of
 						{ok, KafkaTopic, Partition, Client} ->
@@ -303,39 +327,49 @@ get_app_id(Username)->
 			list_to_binary(lists:nth(2,string:tokens(UsernameStr,"@")))
 	end.
 
-get_mqtt_topic(Clientid)->
+get_mqtt_topic(Clientid, connected)->
 	NodeStr = string:concat("$SYS/brokers/", atom_to_list(node())),
-%% 	?LOG(error, "get_mqtt_topic result1:~s", [NodeStr]),
 	Result =  string:concat(string:concat(string:concat(NodeStr, "/clients/"), binary_to_list(Clientid)), "/connected"),
-%% 	?LOG(error, "get_mqtt_topic result:~s",[Result]),
+	list_to_binary(Result);
+
+get_mqtt_topic(Clientid, disconnected)->
+	NodeStr = string:concat("$SYS/brokers/", atom_to_list(node())),
+	Result =  string:concat(string:concat(string:concat(NodeStr, "/clients/"), binary_to_list(Clientid)), "/disconnected"),
 	list_to_binary(Result).
 
 get_ip_str({{I1, I2, I3, I4},_})->
 	IP = list_to_binary(integer_to_list(I1)++"."++integer_to_list(I2)++"."++integer_to_list(I3)++"."++integer_to_list(I4)),
-%% 	?LOG(error,"ip:~s", [IP]),
 	IP.
-%% 	list_to_binary(integer_to_list(I1)++"."++integer_to_list(I2)++"."++integer_to_list(I3)++"."++integer_to_list(I4)).
 
-produce_connect_event_kafka_log(Clientid, Username, Peername) ->
+is_online(connected)->
+	true;
+
+is_online(disconnected)->
+	false.
+	
+
+produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	Now = timestamp(),
-	MqttTopic = get_mqtt_topic(Clientid),
+	MqttTopic = get_mqtt_topic(Clientid, Connection),
 	KafkaPayload = [
 					{clientId , Clientid},
 					{appId , get_app_id(Username)},
 					{recvedAt , Now},
-					{msgId , gen_msg_id(connected)},
+					{msgId , gen_msg_id(Connection)},
 					{mqttTopic , MqttTopic},
+					{deviceSource, <<"roobo">>},
+					{from, <<"mqtt">>},
 					{action , <<"device.status.online">>},
 					{ipaddress , get_ip_str(Peername)},
 					{timestamp , Now},
-					{isOnline , true},
+					{isOnline , is_online(Connection)},
 					{username , Username}
 				],
 	[{_,Topic}] = ets:lookup(kafka_config, online_topic),
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	?LOG(error,"connected payload: ~s topic:~s",[KafkaMessage,Topic]),
+	?LOG(error,"~p payload: ~s topic:~s",[Connection, KafkaMessage, Topic]),
 	{ok, Pid} = brod:produce(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
     ok.
 
@@ -374,6 +408,8 @@ produce_event_kafka_log(disconnected, Message) ->
 					{msgId , gen_msg_id(connected)},
 					{mqttTopic , Message#message.topic},
 					{action , <<"device.status.online">>},
+					{deviceSource, <<"roobo">>},
+					{from, <<"mqtt">>},
 					{ipaddress , proplists:get_value(<<"ipaddress">>, PayloadResult)},
 					{timestamp , proplists:get_value(<<"ts">>, PayloadResult)},
 					{isOnline , false},
