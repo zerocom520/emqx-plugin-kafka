@@ -128,7 +128,7 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
     {ok, Message};
 
 on_message_publish(Message, _Env) ->
-	?LOG(debug, "on_message_publish msg:~p", [Message]),
+%% 	?LOG(debug, "on_message_publish msg:~p", [Message]),
 	produce_message_kafka_payload(Message),
     {ok, Message}.
 
@@ -224,7 +224,7 @@ produce_message_kafka_payload(Message) ->
 					case get_kafka_config(Event, Message#message.from) of
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
-							?LOG(error,"msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]),
+							?LOG(debug,"msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]),
 							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage);
 						{error, Msg} -> 
 							?LOG(error, "get_kafka_config error: ~s",[Msg])
@@ -311,7 +311,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	?LOG(debug, "~p payload: ~s topic:~s", [Connection, KafkaMessage, Topic]),
+	?LOG(debug, "pid:~s ~p payload: ~s topic:~s", [pid_to_list(self()), Connection, KafkaMessage, Topic]),
 	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
     ok.
 
