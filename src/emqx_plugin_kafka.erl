@@ -95,7 +95,7 @@ ekaf_init(_Env) ->
 	
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(brod),
-	ClientConfig = [{reconnect_cool_down_seconds, 10},{query_api_versions,false}],
+	ClientConfig = [{reconnect_cool_down_seconds, 10}, {query_api_versions,false}],
 	ok = brod:start_client([{EventHost,EventPort}], event_client,ClientConfig),
 	ok = brod:start_client([{OnlineHost,OnlinePort}], online_client,ClientConfig),
 	ok = brod:start_client([{CustomHost,CustomPort}], custom_client,ClientConfig),
@@ -128,6 +128,7 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
     {ok, Message};
 
 on_message_publish(Message, _Env) ->
+	?LOG(debug, "on_message_publish msg:~p", [Message]),
 	produce_message_kafka_payload(Message),
     {ok, Message}.
 
@@ -224,7 +225,7 @@ produce_message_kafka_payload(Message) ->
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
 							?LOG(error,"msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]),
-							{ok, Pid} = brod:produce(Client, KafkaTopic, Partition, <<>>, KafkaMessage);
+							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage);
 						{error, Msg} -> 
 							?LOG(error, "get_kafka_config error: ~s",[Msg])
 					end;
@@ -311,7 +312,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
 	?LOG(debug, "~p payload: ~s topic:~s", [Connection, KafkaMessage, Topic]),
-	{ok, Pid} = brod:produce(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
+	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
     ok.
 
 %% Called when the plugin application stop
