@@ -104,21 +104,21 @@ ekaf_init(_Env) ->
 	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), _ProducerConfig = []).
 
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
-	?LOG(debug, "on_client_connected Client:~p node:~s", [Client,node()]),
+	?LOG(info, "[Kafka] on_client_connected node:~s", [node()]),
 	case AuthResult of 
 		success -> 
 			produce_online_kafka_log(Clientid, Username, Peername, connected);
 		Other ->
-			?LOG(debug, "on_client_connected auth error:~p",[AuthResult])
+			?LOG(info, "[Kafka] on_client_connected auth error:~p", [AuthResult])
 	end,
 	ok;
 
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
-	?LOG(debug, "on_client_connected Client:~p node:~s no auth result!", [Client, node()]),
+	?LOG(info, "[Kafka] on_client_connected node:~s no auth result!", [node()]),
 	ok.
 
 on_client_disconnected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
-	?LOG(debug, "on_client_disconnected Client:~p ResonCode:~p", [Client, ReasonCode]),
+	?LOG(info, "[Kafka] on_client_disconnected ResonCode:~p", [ReasonCode]),
 	produce_online_kafka_log(Clientid, Username, Peername, disconnected),
 	ok.
 
@@ -128,7 +128,6 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
     {ok, Message};
 
 on_message_publish(Message, _Env) ->
-%% 	?LOG(debug, "on_message_publish msg:~p", [Message]),
 	produce_message_kafka_payload(Message),
     {ok, Message}.
 
@@ -153,11 +152,11 @@ process_message_topic(Topic)->
 				<<"custom">> ->
 					{ok, custom, get_temp_topic(S)};
 				Other ->
-					?LOG(debug, "unknow topic:~s event:~p", [Topic, Other]),
-					{error,"unknow topic:" ++Topic}
+					?LOG(debug, "[Kafka] unknow topic:~s event:~p", [Topic, Other]),
+					{error, "unknow topic:" ++Topic}
 			end;
 		true->
-			?LOG(debug,"topic size error:~s", [integer_to_list(Size)]),
+			?LOG(debug,"[Kafka] topic size error:~s", [integer_to_list(Size)]),
 			{error, "topic size error:"++integer_to_list(Size)}
 	end.
 	
@@ -179,7 +178,7 @@ process_message_payload(Payload, TempTopic)->
 			DataResult = proplists:delete(<<"action">>, proplists:delete(<<"topic">>, proplists:delete(<<"timestamp">>, BodyResult))),
 			{ok, Topic, Action, DataResult};
 		false ->
-			{error,"Payload is not a json:"++Payload}
+			{error, "Payload is not a json:"++Payload}
 	end.
 
 get_kafka_config(Event, Clientid) ->
@@ -195,7 +194,7 @@ get_kafka_config(Event, Clientid) ->
 			Partition = erlang:phash2(Clientid) rem PartitionTotal,
 			{ok, list_to_binary(Topic), Partition, custom_client};
 		Other ->
-			?LOG(debug, "unknow envent type:~s",[Other]),
+			?LOG(debug, "[Kafka] unknow envent type:~s",[Other]),
 			{error,"unknow envent type:"++Other}
 	end.
 	
@@ -224,16 +223,16 @@ produce_message_kafka_payload(Message) ->
 					case get_kafka_config(Event, Message#message.from) of
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
-							?LOG(debug,"msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]),
-							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage);
+							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage),
+							?LOG(info, "[Kafka] msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]);
 						{error, Msg} -> 
-							?LOG(error, "get_kafka_config error: ~s",[Msg])
+							?LOG(error, "[Kafka] get_kafka_config error: ~s", [Msg])
 					end;
 				{error, Msg} ->
-					?LOG(error,"msg kafka body error: ~s",[Msg])
+					?LOG(debug, "[Kafka] msg kafka body error: ~s", [Msg])
 			end;
 		{error, Msg} ->
-			?LOG(error,"process topic error: ~s",[Msg])
+			?LOG(debug, "[Kafka] process topic error: ~s", [Msg])
 	end,
     ok.
 
@@ -311,8 +310,8 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	?LOG(debug, "pid:~s ~p payload: ~s topic:~s", [pid_to_list(self()), Connection, KafkaMessage, Topic]),
 	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
+	?LOG(info, "[Kafka] pid:~s ~p payload: ~s topic:~s", [pid_to_list(self()), Connection, KafkaMessage, Topic]),
     ok.
 
 %% Called when the plugin application stop
