@@ -19,7 +19,8 @@
 -export([ load/1
         , unload/0
         ]).
-
+-export([produce_online_kafka_log/4]).
+-export([produce_message_kafka_payload/1]).
 %% Hooks functions
 -export([ 
 %% 		 on_client_authenticate/2
@@ -106,8 +107,9 @@ ekaf_init(_Env) ->
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
 	?LOG(info, "[Kafka] on_client_connected node:~s", [node()]),
 	case AuthResult of 
-		success -> 
-			produce_online_kafka_log(Clientid, Username, Peername, connected);
+		success ->
+			proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, connected]);
+%% 			produce_online_kafka_log(Clientid, Username, Peername, connected);
 		Other ->
 			?LOG(info, "[Kafka] on_client_connected auth error:~p", [AuthResult])
 	end,
@@ -119,7 +121,9 @@ on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername
 
 on_client_disconnected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
 	?LOG(info, "[Kafka] on_client_disconnected ResonCode:~p", [ReasonCode]),
-	produce_online_kafka_log(Clientid, Username, Peername, disconnected),
+	proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, disconnected]),
+
+%% 	produce_online_kafka_log(Clientid, Username, Peername, disconnected),
 	ok.
 
 
@@ -128,7 +132,9 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
     {ok, Message};
 
 on_message_publish(Message, _Env) ->
-	produce_message_kafka_payload(Message),
+	proc_lib:spawn(?MODULE, produce_message_kafka_payload, [Message]),
+
+%% 	produce_message_kafka_payload(Message),
     {ok, Message}.
 
 get_temp_topic(S)->
