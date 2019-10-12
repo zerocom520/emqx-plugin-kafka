@@ -162,7 +162,7 @@ process_message_topic(Topic)->
 					{error, "unknow topic:" ++Topic}
 			end;
 		true->
-			?LOG(debug,"[Kafka] topic size error:~s", [integer_to_list(Size)]),
+			?LOG(debug, "[Kafka] topic size error:~s", [integer_to_list(Size)]),
 			{error, "topic size error:"++integer_to_list(Size)}
 	end.
 	
@@ -176,15 +176,27 @@ get_proplist_value(Key, Proplist, DefaultValue)->
 	end.
 
 process_message_payload(Payload, TempTopic)->
-	case jsx:is_json(Payload) of
+	ValidPayload = get_valid_payload(Payload),
+	case jsx:is_json(ValidPayload) of
 		true ->
-			BodyResult = jsx:decode(Payload),
+			BodyResult = jsx:decode(ValidPayload),
 			Topic = get_proplist_value(<<"topic">>, BodyResult, <<"">>),
 			Action = get_proplist_value(<<"action">>, BodyResult, TempTopic),
 			DataResult = proplists:delete(<<"action">>, proplists:delete(<<"topic">>, proplists:delete(<<"timestamp">>, BodyResult))),
 			{ok, Topic, Action, DataResult};
 		false ->
-			{error, "Payload is not a json:"++Payload}
+			{error, "Payload is not a json"}
+	end.
+
+get_valid_payload(Payload) ->
+	Last = binary:last(Payload),
+	case Last of
+		0 ->
+			ValidPayload = lists:nth(1, binary:split(Payload, [<<0>>])),
+			?LOG(error, "error payload hava null str, valid:~p", [ValidPayload]),
+			ValidPayload;
+		Other ->
+			Payload
 	end.
 
 get_kafka_config(Event, Clientid) ->
@@ -235,7 +247,7 @@ produce_message_kafka_payload(Message) ->
 							?LOG(error, "[Kafka] get_kafka_config error: ~s", [Msg])
 					end;
 				{error, Msg} ->
-					?LOG(debug, "[Kafka] msg kafka body error: ~s", [Msg])
+					?LOG(error, "[Kafka] msg kafka body error: ~s payload:~s", [Msg, Message#message.payload])
 			end;
 		{error, Msg} ->
 			?LOG(debug, "[Kafka] process topic error: ~s", [Msg])

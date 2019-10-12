@@ -120,7 +120,9 @@ t_sub_pub(_) ->
 	ct:pal("client1 start link success!"),
     {ok, _} = emqx_client:connect(T1),
 	ct:pal("client1 connect success!"),
+	emqx_client:publish(T1, <<"/BlZGE5ZGQ5ODg5Zm/clients/400011CB000080D5/event/roobo_player">>, <<123,34,97,99,116,105,111,110,34,58,34,115,121,110,99,46,97,108,98,117,109,46,108,105,115,116,34,44,34,116,105,109,101,115,116,97,109,112,34,58,49,53,55,48,56,54,52,54,56,50,55,48,50,125,0>>, [{qos, 0}, {retain, true}]),
     emqx_client:publish(T1, <<"/zhiban-dev/clients/4000000100000003/custom">>, <<"{\"topic\":\"topic1\",\"timestamp\":1483950372000,\"clientId\":\"12353\",\"action\":\"todo\",\"key\":\"value\"}">>, [{qos, 0}, {retain, true}]),
+
 	ct:pal("client1 public success!"),
     timer:sleep(1000),
     {ok, T2} = emqx_client:start_link([{host, "localhost"},
