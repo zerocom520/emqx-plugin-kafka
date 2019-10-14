@@ -109,7 +109,6 @@ on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername
 	case AuthResult of 
 		success ->
 			proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, connected]);
-%% 			produce_online_kafka_log(Clientid, Username, Peername, connected);
 		Other ->
 			?LOG(info, "[Kafka] on_client_connected auth error:~p", [AuthResult])
 	end,
@@ -122,8 +121,6 @@ on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername
 on_client_disconnected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
 	?LOG(info, "[Kafka] on_client_disconnected ResonCode:~p", [ReasonCode]),
 	proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, disconnected]),
-
-%% 	produce_online_kafka_log(Clientid, Username, Peername, disconnected),
 	ok.
 
 
@@ -133,8 +130,6 @@ on_message_publish(Message = #message{topic = <<"$SYS/", _/binary>>}, _Env) ->
 
 on_message_publish(Message, _Env) ->
 	proc_lib:spawn(?MODULE, produce_message_kafka_payload, [Message]),
-
-%% 	produce_message_kafka_payload(Message),
     {ok, Message}.
 
 get_temp_topic(S)->
@@ -158,12 +153,10 @@ process_message_topic(Topic)->
 				<<"custom">> ->
 					{ok, custom, get_temp_topic(S)};
 				Other ->
-					?LOG(debug, "[Kafka] unknow topic:~s event:~p", [Topic, Other]),
-					{error, "unknow topic:" ++Topic}
+					{error, "unknow topic:" ++ Topic}
 			end;
 		true->
-			?LOG(debug, "[Kafka] topic size error:~s", [integer_to_list(Size)]),
-			{error, "topic size error:"++integer_to_list(Size)}
+			{error, "topic size error:" ++ integer_to_list(Size)}
 	end.
 	
 
@@ -193,7 +186,7 @@ get_valid_payload(Payload) ->
 	case Last of
 		0 ->
 			ValidPayload = lists:nth(1, binary:split(Payload, [<<0>>])),
-			?LOG(error, "error payload hava null str, valid:~p", [ValidPayload]),
+			?LOG(debug, "[kafka] error payload hava null str, valid:~p", [ValidPayload]),
 			ValidPayload;
 		Other ->
 			Payload
@@ -212,12 +205,15 @@ get_kafka_config(Event, Clientid) ->
 			Partition = erlang:phash2(Clientid) rem PartitionTotal,
 			{ok, list_to_binary(Topic), Partition, custom_client};
 		Other ->
-			?LOG(debug, "[Kafka] unknow envent type:~s",[Other]),
-			{error,"unknow envent type:"++Other}
+			{error, "unknow envent type:" ++ Other}
 	end.
 	
 
 produce_message_kafka_payload(Message) ->
+	#{peername:= Peername} = Message#message.headers,
+	{Ip, IpPort} = get_ip_str(Peername),
+	Clientid = Message#message.from,
+	LoggerHeader = list_to_binary([Clientid, ":" , IpPort]),
 	Topic = Message#message.topic, 
 	case process_message_topic(Topic) of 
 		{ok, Event, TempTopic} ->
@@ -242,17 +238,20 @@ produce_message_kafka_payload(Message) ->
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
 							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage),
-							?LOG(info, "[Kafka] msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]);
+							log_kafka(info, LoggerHeader, "[Kafka] msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]);
 						{error, Msg} -> 
-							?LOG(error, "[Kafka] get_kafka_config error: ~s", [Msg])
+							log_kafka(error, LoggerHeader, "[Kafka] get_kafka_config error: ~s", [Msg])
 					end;
 				{error, Msg} ->
-					?LOG(error, "[Kafka] msg kafka body error: ~s payload:~s", [Msg, Message#message.payload])
+					log_kafka(info, LoggerHeader, "[Kafka] msg kafka body error: ~s payload:~s", [Msg, Message#message.payload])
 			end;
 		{error, Msg} ->
-			?LOG(debug, "[Kafka] process topic error: ~s", [Msg])
+			log_kafka(debug, LoggerHeader, "[Kafka] process topic error: ~s", [Msg])
 	end,
     ok.
+
+log_kafka(Level, Header, Msg, Args) ->
+	?LOG(Level, "~s " ++ Msg , [Header] ++ Args).
 
 timestamp() ->
     {M, S, _} = os:timestamp(),
@@ -296,9 +295,10 @@ get_mqtt_topic(Clientid, disconnected)->
 	Result =  string:concat(string:concat(string:concat(NodeStr, "/clients/"), binary_to_list(Clientid)), "/disconnected"),
 	list_to_binary(Result).
 
-get_ip_str({{I1, I2, I3, I4},_})->
-	IP = list_to_binary(integer_to_list(I1)++"."++integer_to_list(I2)++"."++integer_to_list(I3)++"."++integer_to_list(I4)),
-	IP.
+get_ip_str({{I1, I2, I3, I4}, Port})->
+	IpStr = integer_to_list(I1) ++ "." ++ integer_to_list(I2) ++ "." ++ integer_to_list(I3) ++ "." ++ integer_to_list(I4),
+	IP = list_to_binary(IpStr),
+	{IP, list_to_binary(IpStr ++ ":" ++ integer_to_list(Port))}.
 
 is_online(connected)->
 	true;
@@ -310,6 +310,7 @@ is_online(disconnected)->
 produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	Now = timestamp() * 1000,
 	MqttTopic = get_mqtt_topic(Clientid, Connection),
+	{Ip, IpPort} = get_ip_str(Peername),
 	KafkaPayload = [
 					{clientId , Clientid},
 					{appId , get_app_id(Username)},
@@ -319,7 +320,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 					{deviceSource, <<"roobo">>},
 					{from, <<"mqtt">>},
 					{action , <<"device.status.online">>},
-					{ipaddress , get_ip_str(Peername)},
+					{ipaddress , Ip},
 					{timestamp , Now},
 					{isOnline , is_online(Connection)},
 					{username , Username}
@@ -329,7 +330,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
 	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
-	?LOG(info, "[Kafka] pid:~s ~p payload: ~s topic:~s", [pid_to_list(self()), Connection, KafkaMessage, Topic]),
+	?LOG(info, "~s@~s [Kafka] pid:~s ~p payload: ~s topic:~s", [Clientid, IpPort, pid_to_list(self()), Connection, KafkaMessage, Topic]),
     ok.
 
 %% Called when the plugin application stop
