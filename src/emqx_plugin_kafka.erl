@@ -208,16 +208,11 @@ get_kafka_config(Event, Clientid) ->
 			{error, "unknow envent type:" ++ Other}
 	end.
 	
-
-produce_message_kafka_payload(Message) ->
-	#{peername:= Peername} = Message#message.headers,
+produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername, username:=Username}, from = Clientid, topic = Topic}) ->
 	{Ip, IpPort} = get_ip_str(Peername),
-	Clientid = Message#message.from,
 	LoggerHeader = list_to_binary([Clientid, ":" , IpPort]),
-	Topic = Message#message.topic, 
 	case process_message_topic(Topic) of 
 		{ok, Event, TempTopic} ->
-			#{username:=Username} = Message#message.headers,
 			case process_message_payload(Message#message.payload, TempTopic) of
 				{ok, PaloadTopic, Action, Data} ->
 					{M, S, _} = Message#message.timestamp,
@@ -248,7 +243,10 @@ produce_message_kafka_payload(Message) ->
 		{error, Msg} ->
 			log_kafka(debug, LoggerHeader, "[Kafka] process topic error: ~s", [Msg])
 	end,
-    ok.
+    ok;
+
+produce_message_kafka_payload(Message = #message{headers = #{username:=Username}}) ->
+	log_kafka(info, "" , "[Kafka] user:~s message do not have peer info! ~s", [Username, Message]).
 
 log_kafka(Level, Header, Msg, Args) ->
 	?LOG(Level, "~s " ++ Msg , [Header] ++ Args).
