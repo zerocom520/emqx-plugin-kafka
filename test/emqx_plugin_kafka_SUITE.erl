@@ -127,7 +127,6 @@ t_sub_pub(_) ->
 	emqx_client:publish(T1, <<"/zhiban-dev/clients/4000000100000003">>, <<"hello">>, [{qos, 0}, {retain, true}]),
 
 	ct:pal("client1 public success!"),
-    timer:sleep(1000),
     {ok, T2} = emqx_client:start_link([{host, "localhost"},
                                        {client_id, <<"client2">>},
                                        {username, <<"client2@testuser2">>},
@@ -138,7 +137,6 @@ t_sub_pub(_) ->
         {publish, _Topic, Payload} ->
             ?assertEqual(<<"{\"topic\":\"topic1\",\"timestamp\":1483950372000,\"clientId\":\"\",\"action\":\"todo\",\"key\":\"value\"}">>, Payload)
         after 1000 -> false end,
-	timer:sleep(1000),
     emqx_client:disconnect(T1),
     emqx_client:disconnect(T2).
 

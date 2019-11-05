@@ -222,7 +222,7 @@ produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername
 							{recvedAt , timestamp() * 1000},
 							{from , <<"mqtt">>},
 							{type , <<"string">>},
-							{msgId , gen_msg_id(Event)},
+							{msgId , gen_msg_id(Event, Clientid)},
 							{mqttTopic , Topic},
 							{topic , PaloadTopic},
 							{action , Action},
@@ -246,7 +246,7 @@ produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername
     ok;
 
 produce_message_kafka_payload(Message = #message{headers = #{username:=Username}}) ->
-	log_kafka(info, "" , "[Kafka] user:~s message do not have peer info! ~s", [Username, Message]).
+	ok.
 
 log_kafka(Level, Header, Msg, Args) ->
 	?LOG(Level, "~s " ++ Msg , [Header] ++ Args).
@@ -255,17 +255,17 @@ timestamp() ->
     {M, S, _} = os:timestamp(),
     M * 1000000 + S.
 
-gen_msg_id(connected)->
-	list_to_binary("rbc"++string:substr(md5:md5(integer_to_list(timestamp()+random:uniform(1000000))), 8, 20));
+gen_msg_id(connected, ClientId)->
+	list_to_binary("rbc" ++ string:substr(md5:md5(binary_to_list(ClientId) ++ integer_to_list(timestamp() + rand:uniform(1000000))), 8, 20));
 
-gen_msg_id(disconnected)->
-	list_to_binary("rbd"++string:substr(md5:md5(integer_to_list(timestamp()+random:uniform(1000000))), 8, 20));
+gen_msg_id(disconnected, ClientId)->
+	list_to_binary("rbd" ++ string:substr(md5:md5(binary_to_list(ClientId) ++ integer_to_list(timestamp() + rand:uniform(1000000))), 8, 20));
 
-gen_msg_id(custom)->
-	list_to_binary("rbt"++string:substr(md5:md5(integer_to_list(timestamp()+random:uniform(1000000))), 8, 20));
+gen_msg_id(custom, ClientId)->
+	list_to_binary("rbt" ++ string:substr(md5:md5(binary_to_list(ClientId) ++ integer_to_list(timestamp() + rand:uniform(1000000))), 8, 20));
 
-gen_msg_id(event)->
-	list_to_binary("rbe"++string:substr(md5:md5(integer_to_list(timestamp()+random:uniform(1000000))), 8, 20)).
+gen_msg_id(event, ClientId)->
+	list_to_binary("rbe" ++ string:substr(md5:md5(binary_to_list(ClientId) ++ integer_to_list(timestamp() + rand:uniform(1000000))), 8, 20)).
 
 get_app_id(Username)->
 	if is_binary(Username) ->
@@ -313,7 +313,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 					{clientId , Clientid},
 					{appId , get_app_id(Username)},
 					{recvedAt , Now},
-					{msgId , gen_msg_id(Connection)},
+					{msgId , gen_msg_id(Connection, Clientid)},
 					{mqttTopic , MqttTopic},
 					{deviceSource, <<"roobo">>},
 					{from, <<"mqtt">>},
