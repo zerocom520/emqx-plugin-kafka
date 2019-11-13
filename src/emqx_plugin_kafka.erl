@@ -215,18 +215,18 @@ produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername
 		{ok, Event, TempTopic} ->
 			case process_message_payload(Message#message.payload, TempTopic) of
 				{ok, PaloadTopic, Action, Data} ->
-					{M, S, _} = Message#message.timestamp,
+					{M, S, MS} = Message#message.timestamp,
 					KafkaPayload = [
 							{clientId , Message#message.from},
 							{appId , get_app_id(Username)},
-							{recvedAt , timestamp() * 1000},
+							{recvedAt , timestamp()},
 							{from , <<"mqtt">>},
 							{type , <<"string">>},
 							{msgId , gen_msg_id(Event, Clientid)},
 							{mqttTopic , Topic},
 							{topic , PaloadTopic},
 							{action , Action},
-							{timestamp , (M * 1000000 + S) * 1000},
+							{timestamp , (M * 1000000 + S) * 1000 + MS div 1000},
 							{data , Data}
 						],
 					case get_kafka_config(Event, Message#message.from) of
@@ -252,8 +252,8 @@ log_kafka(Level, Header, Msg, Args) ->
 	?LOG(Level, "~s " ++ Msg , [Header] ++ Args).
 
 timestamp() ->
-    {M, S, _} = os:timestamp(),
-    M * 1000000 + S.
+    {M, S, MS} = os:timestamp(),
+    (M * 1000000 + S) * 1000 + MS div 1000.
 
 gen_msg_id(connected, ClientId)->
 	list_to_binary("rbc" ++ string:substr(md5:md5(binary_to_list(ClientId) ++ integer_to_list(timestamp() + rand:uniform(1000000))), 8, 20));
@@ -306,7 +306,7 @@ is_online(disconnected)->
 	
 
 produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
-	Now = timestamp() * 1000,
+	Now = timestamp(),
 	MqttTopic = get_mqtt_topic(Clientid, Connection),
 	{Ip, IpPort} = get_ip_str(Peername),
 	KafkaPayload = [
