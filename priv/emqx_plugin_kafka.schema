@@ -61,6 +61,21 @@
   {datatype, string}
 ]}.
 
+{mapping, "config.kafka.required_acks", "emqx_plugin_kafka.broker", [
+  {default, 1},
+  {datatype, integer}
+]}.
+
+{mapping, "config.kafka.max_batch_size", "emqx_plugin_kafka.broker", [
+  {default, 1048576},
+  {datatype, integer}
+]}.
+
+{mapping, "config.kafka.max_linger_ms", "emqx_plugin_kafka.broker", [
+  {default, 0},
+  {datatype, integer}
+]}.
+
 {translation, "emqx_plugin_kafka.broker", fun(Conf) ->
   [
   	{event_host, cuttlefish:conf_get("event.kafka.host", Conf)},
@@ -76,6 +91,9 @@
   	{online_host, cuttlefish:conf_get("online.kafka.host", Conf)},
   	{online_port, cuttlefish:conf_get("online.kafka.port", Conf)},
   	{online_partition_total, cuttlefish:conf_get("online.kafka.partition_total", Conf)},
-  	{online_topic, cuttlefish:conf_get("online.kafka.topic", Conf)}
+	{online_topic, cuttlefish:conf_get("online.kafka.topic", Conf)},
+	{required_acks, cuttlefish:conf_get("config.kafka.required_acks", Conf)},
+	{max_batch_size, cuttlefish:conf_get("config.kafka.max_batch_size", Conf)},
+	{max_linger_ms, cuttlefish:conf_get("config.kafka.max_linger_ms", Conf)}
   ]
   end}.

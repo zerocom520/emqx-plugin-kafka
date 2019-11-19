@@ -77,7 +77,11 @@ ekaf_init(_Env) ->
 	OnlinePartitionTotal = proplists:get_value(online_partition_total, BrokerValues),
 	OnlineTopic = proplists:get_value(online_topic, BrokerValues),
 	
-	ets:new(kafka_config, [named_table, protected, set, {keypos, 1}, {read_concurrency,true}]),
+	RequiredAcks = proplists:get_value(required_acks, BrokerValues),
+	MaxBatchSize = proplists:get_value(max_batch_size, BrokerValues),
+	MaxLingerMs = proplists:get_value(max_linger_ms, BrokerValues),
+
+	ets:new(kafka_config, [named_table, protected, set, {keypos, 1}, {read_concurrency, true}]),
 	
 	ets:insert(kafka_config, {event_host, EventHost}),
 	ets:insert(kafka_config, {event_port, EventPort}),
@@ -93,16 +97,18 @@ ekaf_init(_Env) ->
     ets:insert(kafka_config, {online_port, OnlinePort}),
 	ets:insert(kafka_config, {online_partition_total, OnlinePartitionTotal}),
 	ets:insert(kafka_config, {online_topic, OnlineTopic}),
-	
+
+	ProducerConfig = [{required_acks, RequiredAcks}, {max_batch_size, MaxBatchSize}, {max_linger_ms, MaxLingerMs}],
+
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(brod),
 	ClientConfig = [{reconnect_cool_down_seconds, 10}, {query_api_versions,false}],
-	ok = brod:start_client([{EventHost,EventPort}], event_client,ClientConfig),
-	ok = brod:start_client([{OnlineHost,OnlinePort}], online_client,ClientConfig),
-	ok = brod:start_client([{CustomHost,CustomPort}], custom_client,ClientConfig),
-	ok = brod:start_producer(event_client, list_to_binary(EventTopic), _ProducerConfig = []),
-	ok = brod:start_producer(online_client, list_to_binary(OnlineTopic), _ProducerConfig = []),
-	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), _ProducerConfig = []).
+	ok = brod:start_client([{EventHost, EventPort}], event_client,ClientConfig),
+	ok = brod:start_client([{OnlineHost, OnlinePort}], online_client,ClientConfig),
+	ok = brod:start_client([{CustomHost, CustomPort}], custom_client,ClientConfig),
+	ok = brod:start_producer(event_client, list_to_binary(EventTopic), ProducerConfig),
+	ok = brod:start_producer(online_client, list_to_binary(OnlineTopic), ProducerConfig),
+	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), ProducerConfig).
 
 on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
 	?LOG(info, "[Kafka] on_client_connected node:~s", [node()]),
