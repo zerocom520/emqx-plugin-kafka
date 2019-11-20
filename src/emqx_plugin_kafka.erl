@@ -105,9 +105,9 @@ ekaf_init(_Env) ->
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(brod),
 	ClientConfig = [{reconnect_cool_down_seconds, 10}, {query_api_versions,false}],
-	ok = brod:start_client([{EventHost, EventPort}], event_client,ClientConfig),
-	ok = brod:start_client([{OnlineHost, OnlinePort}], online_client,ClientConfig),
-	ok = brod:start_client([{CustomHost, CustomPort}], custom_client,ClientConfig),
+	ok = brod:start_client([{EventHost, EventPort}], event_client, ClientConfig),
+	ok = brod:start_client([{OnlineHost, OnlinePort}], online_client, ClientConfig),
+	ok = brod:start_client([{CustomHost, CustomPort}], custom_client, ClientConfig),
 	ok = brod:start_producer(event_client, list_to_binary(EventTopic), ProducerConfig),
 	ok = brod:start_producer(online_client, list_to_binary(OnlineTopic), ProducerConfig),
 	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), ProducerConfig).
@@ -341,7 +341,9 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 
 %% Called when the plugin application stop
 unload() ->
-	brod:stop(),
+	brod:stop_client(event_client),
+	brod:stop_client(online_client),
+	brod:stop_client(custom_client),
     emqx:unhook('client.authenticate', fun ?MODULE:on_client_authenticate/2),
     emqx:unhook('client.check_acl', fun ?MODULE:on_client_check_acl/5),
     emqx:unhook('client.connected', fun ?MODULE:on_client_connected/4),
