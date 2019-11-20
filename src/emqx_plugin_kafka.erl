@@ -21,6 +21,7 @@
         ]).
 -export([produce_online_kafka_log/4]).
 -export([produce_message_kafka_payload/1]).
+-define(config(Key, Config, Default), proplists:get_value(Key, Config, Default)).
 %% Hooks functions
 -export([ 
 %% 		 on_client_authenticate/2
@@ -58,7 +59,6 @@ load(Env) ->
 %%     emqx:hook('message.deliver', fun ?MODULE:on_message_deliver/3, [Env]),
 %%     emqx:hook('message.acked', fun ?MODULE:on_message_acked/3, [Env]),
 %%     emqx:hook('message.dropped', fun ?MODULE:on_message_dropped/3, [Env]).
-
 
 ekaf_init(_Env) ->
     {ok, BrokerValues} = application:get_env(emqx_plugin_kafka, broker),
@@ -99,6 +99,8 @@ ekaf_init(_Env) ->
 	ets:insert(kafka_config, {online_topic, OnlineTopic}),
 
 	ProducerConfig = [{required_acks, RequiredAcks}, {max_batch_size, MaxBatchSize}, {max_linger_ms, MaxLingerMs}],
+
+	?LOG(info, "[Kafka] init config ack:~p batch_size:~p max_linger:~p", [?config(required_acks, ProducerConfig, -1), ?config(max_batch_size,ProducerConfig, -1), ?config(max_linger_ms, ProducerConfig, -1)]),
 
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(brod),
@@ -339,6 +341,7 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 
 %% Called when the plugin application stop
 unload() ->
+	brod:stop(),
     emqx:unhook('client.authenticate', fun ?MODULE:on_client_authenticate/2),
     emqx:unhook('client.check_acl', fun ?MODULE:on_client_check_acl/5),
     emqx:unhook('client.connected', fun ?MODULE:on_client_connected/4),
