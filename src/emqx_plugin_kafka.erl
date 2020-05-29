@@ -104,29 +104,31 @@ ekaf_init(_Env) ->
 
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(brod),
-	ClientConfig = [{reconnect_cool_down_seconds, 10}, {query_api_versions,false}],
+	ClientConfig = [{reconnect_cool_down_seconds, 10}, {query_api_versions,false}, {auto_start_producers, true}, {default_producer_config, ProducerConfig}],
 	ok = brod:start_client([{EventHost, EventPort}], event_client, ClientConfig),
 	ok = brod:start_client([{OnlineHost, OnlinePort}], online_client, ClientConfig),
-	ok = brod:start_client([{CustomHost, CustomPort}], custom_client, ClientConfig),
-	ok = brod:start_producer(event_client, list_to_binary(EventTopic), ProducerConfig),
-	ok = brod:start_producer(online_client, list_to_binary(OnlineTopic), ProducerConfig),
-	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), ProducerConfig).
+	ok = brod:start_client([{CustomHost, CustomPort}], custom_client, ClientConfig).
+%% 	ok = brod:start_producer(event_client, list_to_binary(EventTopic), ProducerConfig),
+%% 	ok = brod:start_producer(online_client, list_to_binary(OnlineTopic), ProducerConfig),
+%% 	ok = brod:start_producer(custom_client, list_to_binary(CustomTopic), ProducerConfig).
 
-on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, ConnAck, ConnAttrs, _Env) ->
+%% ensure_brod_producer(Client, Topic) ->
+
+on_client_connected(_Client = #{username:=Username, client_id:=Clientid, peername:= Peername, auth_result:= AuthResult}, _ConnAck, _ConnAttrs, _Env) ->
 	?LOG(info, "[Kafka] on_client_connected node:~s", [node()]),
 	case AuthResult of 
 		success ->
 			proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, connected]);
-		Other ->
+		_Other ->
 			?LOG(info, "[Kafka] on_client_connected auth error:~p", [AuthResult])
 	end,
 	ok;
 
-on_client_connected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ConnAck, ConnAttrs, _Env) ->
+on_client_connected(_Client = #{username:=_Username, client_id:=_Clientid, peername:= _Peername}, _ConnAck, _ConnAttrs, _Env) ->
 	?LOG(info, "[Kafka] on_client_connected node:~s no auth result!", [node()]),
 	ok.
 
-on_client_disconnected(Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
+on_client_disconnected(_Client = #{username:=Username, client_id:=Clientid, peername:= Peername}, ReasonCode, _Env) ->
 	?LOG(info, "[Kafka] on_client_disconnected ResonCode:~p", [ReasonCode]),
 	proc_lib:spawn(?MODULE, produce_online_kafka_log, [Clientid, Username, Peername, disconnected]),
 	ok.
@@ -160,7 +162,7 @@ process_message_topic(Topic)->
 					{ok, event, get_temp_topic(S)};
 				<<"custom">> ->
 					{ok, custom, get_temp_topic(S)};
-				Other ->
+				_Other ->
 					{error, "unknow topic:" ++ Topic}
 			end;
 		true->
@@ -196,7 +198,7 @@ get_valid_payload(Payload) ->
 			ValidPayload = lists:nth(1, binary:split(Payload, [<<0>>])),
 			?LOG(debug, "[kafka] error payload hava null str, valid:~p", [ValidPayload]),
 			ValidPayload;
-		Other ->
+		_Other ->
 			Payload
 	end.
 
@@ -217,7 +219,7 @@ get_kafka_config(Event, Clientid) ->
 	end.
 	
 produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername, username:=Username}, from = Clientid, topic = Topic}) ->
-	{Ip, IpPort} = get_ip_str(Peername),
+	{_Ip, IpPort} = get_ip_str(Peername),
 	LoggerHeader = list_to_binary([Clientid, ":" , IpPort]),
 	case process_message_topic(Topic) of 
 		{ok, Event, TempTopic} ->
@@ -240,7 +242,8 @@ produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername
 					case get_kafka_config(Event, Message#message.from) of
 						{ok, KafkaTopic, Partition, Client} ->
 							KafkaMessage = jsx:encode(KafkaPayload),
-							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage),
+%% 							ok = brod:produce_sync(Client, KafkaTopic, Partition, <<>>, KafkaMessage),
+							safe_send(Client, KafkaTopic, Partition, KafkaMessage),
 							log_kafka(info, LoggerHeader, "[Kafka] msg payload: ~s topic:~s", [KafkaMessage, KafkaTopic]);
 						{error, Msg} -> 
 							log_kafka(error, LoggerHeader, "[Kafka] get_kafka_config error: ~s", [Msg])
@@ -253,7 +256,7 @@ produce_message_kafka_payload(Message = #message{headers = #{peername:= Peername
 	end,
     ok;
 
-produce_message_kafka_payload(Message = #message{headers = #{username:=Username}}) ->
+produce_message_kafka_payload(_Message = #message{headers = #{username:=_Username}}) ->
 	ok.
 
 log_kafka(Level, Header, Msg, Args) ->
@@ -312,6 +315,12 @@ is_online(connected)->
 is_online(disconnected)->
 	false.
 	
+safe_send(Client, Topic, Partition, KafkaMessage) ->
+	case brod:produce_sync(Client, list_to_binary(Topic), Partition, <<>>, KafkaMessage) of
+		ok -> ok;
+		{error, Result} ->
+			?LOG(error, "[kafka] produce error: ~p", [Result])
+	end.
 
 produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	Now = timestamp(),
@@ -335,7 +344,8 @@ produce_online_kafka_log(Clientid, Username, Peername, Connection) ->
 	[{_, PartitionTotal}] = ets:lookup(kafka_config, online_partition_total),
 	Partition = erlang:phash2(Clientid) rem PartitionTotal,
 	KafkaMessage = jsx:encode(KafkaPayload),
-	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
+	safe_send(online_client, list_to_binary(Topic), Partition, KafkaMessage),
+%% 	ok = brod:produce_sync(online_client, list_to_binary(Topic), Partition, <<>>, KafkaMessage),
 	?LOG(info, "~s@~s [Kafka] pid:~s ~p payload: ~s topic:~s", [Clientid, IpPort, pid_to_list(self()), Connection, KafkaMessage, Topic]),
     ok.
 
