@@ -316,7 +316,7 @@ is_online(disconnected)->
 	false.
 	
 safe_send(Client, Topic, Partition, KafkaMessage) ->
-	case brod:produce_sync(Client, list_to_binary(Topic), Partition, <<>>, KafkaMessage) of
+	case brod:produce_sync(Client, Topic, Partition, <<>>, KafkaMessage) of
 		ok -> ok;
 		{error, Result} ->
 			?LOG(error, "[kafka] produce error: ~p", [Result])
